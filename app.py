@@ -1,0 +1,88 @@
+import streamlit as st
+import PyPDF2
+import docx
+import nltk
+import re
+
+from sklearn.feature_extraction.text import TfidfVectorizer
+from sklearn.metrics.pairwise import cosine_similarity
+
+nltk.download('stopwords')
+from nltk.corpus import stopwords
+
+# -------------------------------
+# Text Extraction Functions
+# -------------------------------
+def extract_text_from_pdf(file):
+    text = ""
+    pdf_reader = PyPDF2.PdfReader(file)
+    for page in pdf_reader.pages:
+        text += page.extract_text()
+    return text
+
+def extract_text_from_docx(file):
+    doc = docx.Document(file)
+    return " ".join([para.text for para in doc.paragraphs])
+
+# -------------------------------
+# Text Preprocessing
+# -------------------------------
+def preprocess_text(text):
+    text = text.lower()
+    text = re.sub(r'[^a-zA-Z ]', ' ', text)
+    tokens = text.split()
+    tokens = [word for word in tokens if word not in stopwords.words('english')]
+    return " ".join(tokens)
+
+# -------------------------------
+# Similarity Calculation
+# -------------------------------
+def calculate_similarity(resume_texts, job_desc):
+    documents = resume_texts + [job_desc]
+    tfidf = TfidfVectorizer()
+    tfidf_matrix = tfidf.fit_transform(documents)
+    similarity_scores = cosine_similarity(tfidf_matrix[-1], tfidf_matrix[:-1])
+    return similarity_scores[0]
+
+# -------------------------------
+# Streamlit UI
+# -------------------------------
+st.set_page_config(page_title="AI Resume Screening System", layout="centered")
+
+st.title("🤖 AI-Based Resume Screening System")
+st.write("Upload resumes and compare them with job description using AI & NLP")
+
+job_description = st.text_area("📌 Enter Job Description")
+
+uploaded_files = st.file_uploader(
+    "📂 Upload Resumes (PDF or DOCX)",
+    type=["pdf", "docx"],
+    accept_multiple_files=True
+)
+
+if st.button("🔍 Screen Resumes"):
+    if not job_description or not uploaded_files:
+        st.warning("Please provide both job description and resumes.")
+    else:
+        resume_texts = []
+        resume_names = []
+
+        for file in uploaded_files:
+            if file.name.endswith(".pdf"):
+                text = extract_text_from_pdf(file)
+            else:
+                text = extract_text_from_docx(file)
+
+            processed_text = preprocess_text(text)
+            resume_texts.append(processed_text)
+            resume_names.append(file.name)
+
+        processed_job_desc = preprocess_text(job_description)
+        scores = calculate_similarity(resume_texts, processed_job_desc)
+
+        results = list(zip(resume_names, scores))
+        results.sort(key=lambda x: x[1], reverse=True)
+
+        st.subheader("📊 Resume Ranking Results")
+        for name, score in results:
+            st.write(f"📄 **{name}** → Match Score: **{round(score*100, 2)}%**")
